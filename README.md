@@ -3,7 +3,7 @@
 
 ## dataset 
 #### URLs
-**UCI Repository ** : https://archive.ics.uci.edu/dataset/967/phiusil+phishing+url+dataset
+**UCI Repository** : https://archive.ics.uci.edu/dataset/967/phiusil+phishing+url+dataset
 **PhishTank** : https://www.phishtank.org/developer_info.php?
 
 #### EMAILs
