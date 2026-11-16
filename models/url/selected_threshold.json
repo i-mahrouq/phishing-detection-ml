@@ -1,0 +1,27 @@
+{
+  "model": "random_forest",
+  "artifact": "models/url/random_forest.joblib",
+  "threshold": 0.4754530853344011,
+  "score_type": "probability",
+  "positive_label": 1,
+  "prediction_rule": "score >= threshold",
+  "tuned_on": "validation only",
+  "objective": "maximum phishing F1; ties prefer recall",
+  "validation_metrics": {
+    "phishing_precision": 0.9991241072631721,
+    "phishing_recall": 0.9901842948717948,
+    "phishing_f1": 0.9946341136226441,
+    "average_precision": 0.9978181819672285,
+    "roc_auc": 0.9971120294333222,
+    "confusion_matrix": [
+      [
+        20213,
+        13
+      ],
+      [
+        147,
+        14829
+      ]
+    ]
+  }
+}

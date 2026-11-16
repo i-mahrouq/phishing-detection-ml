@@ -1,0 +1,193 @@
+{
+  "seed": 42,
+  "task": "email",
+  "configurations": [
+    {
+      "name": "logistic_regression_none",
+      "artifact": "models/email/logistic_regression_none.joblib",
+      "score_type": "probability",
+      "default_threshold": 0.5,
+      "training_seconds": 9.764967541996157,
+      "validation_inference_seconds": 0.0404201369965449,
+      "validation_inference_ms_per_row": 0.00089928442380014,
+      "validation_default_threshold": {
+        "phishing_precision": 0.9905745062836625,
+        "phishing_recall": 0.9359626802374894,
+        "phishing_f1": 0.9624945486262538,
+        "average_precision": 0.9959791462038841,
+        "roc_auc": 0.9991285167007016,
+        "confusion_matrix": [
+          [
+            40189,
+            42
+          ],
+          [
+            302,
+            4414
+          ]
+        ]
+      },
+      "warnings": []
+    },
+    {
+      "name": "logistic_regression_balanced",
+      "artifact": "models/email/logistic_regression_balanced.joblib",
+      "score_type": "probability",
+      "default_threshold": 0.5,
+      "training_seconds": 10.220746047998546,
+      "validation_inference_seconds": 0.04175872300402261,
+      "validation_inference_ms_per_row": 0.0009290658554302315,
+      "validation_default_threshold": {
+        "phishing_precision": 0.9581967213114754,
+        "phishing_recall": 0.991518235793045,
+        "phishing_f1": 0.9745727386411005,
+        "average_precision": 0.996562133928408,
+        "roc_auc": 0.9993483403067389,
+        "confusion_matrix": [
+          [
+            40027,
+            204
+          ],
+          [
+            40,
+            4676
+          ]
+        ]
+      },
+      "warnings": []
+    },
+    {
+      "name": "linear_svm_none",
+      "artifact": "models/email/linear_svm_none.joblib",
+      "score_type": "uncalibrated_margin",
+      "default_threshold": 0.0,
+      "training_seconds": 4.838560802993015,
+      "validation_inference_seconds": 0.041366037010448053,
+      "validation_inference_ms_per_row": 0.0009203292101908481,
+      "validation_default_threshold": {
+        "phishing_precision": 0.9891798312053668,
+        "phishing_recall": 0.969253604749788,
+        "phishing_f1": 0.9791153475420371,
+        "average_precision": 0.9973344979797072,
+        "roc_auc": 0.9994678737078784,
+        "confusion_matrix": [
+          [
+            40181,
+            50
+          ],
+          [
+            145,
+            4571
+          ]
+        ]
+      },
+      "warnings": []
+    },
+    {
+      "name": "linear_svm_balanced",
+      "artifact": "models/email/linear_svm_balanced.joblib",
+      "score_type": "uncalibrated_margin",
+      "default_threshold": 0.0,
+      "training_seconds": 12.530711604995304,
+      "validation_inference_seconds": 0.04232265500468202,
+      "validation_inference_ms_per_row": 0.0009416124547729997,
+      "validation_default_threshold": {
+        "phishing_precision": 0.9779179810725552,
+        "phishing_recall": 0.9860050890585241,
+        "phishing_f1": 0.9819448843839088,
+        "average_precision": 0.9971578999281334,
+        "roc_auc": 0.9994890301553484,
+        "confusion_matrix": [
+          [
+            40126,
+            105
+          ],
+          [
+            66,
+            4650
+          ]
+        ]
+      },
+      "warnings": []
+    }
+  ],
+  "selected_model": "linear_svm_none",
+  "selection": "validation average precision, then default-threshold phishing F1, then recall",
+  "selected_threshold": -0.24541511286701478,
+  "selected_validation_metrics": {
+    "phishing_precision": 0.9778854254422915,
+    "phishing_recall": 0.984520780322307,
+    "phishing_f1": 0.9811918850380389,
+    "average_precision": 0.9973344979797072,
+    "roc_auc": 0.9994678737078784,
+    "confusion_matrix": [
+      [
+        40126,
+        105
+      ],
+      [
+        73,
+        4643
+      ]
+    ]
+  },
+  "inputs": {
+    "data/features/emails/feature_report.json": {
+      "size": 2108,
+      "mtime_ns": 1794755119630168863
+    },
+    "models/feature_engineering/emails_schema.json": {
+      "size": 524,
+      "mtime_ns": 1794755116750765747
+    },
+    "models/feature_engineering/email_transformer.joblib": {
+      "size": 610188,
+      "mtime_ns": 1794755116750335054
+    },
+    "data/features/emails/train.npz": {
+      "size": 190770242,
+      "mtime_ns": 1794755042439453577
+    },
+    "data/features/emails/train_rows.parquet": {
+      "size": 13827383,
+      "mtime_ns": 1794755042494454229
+    },
+    "data/splits/emails/train.parquet": {
+      "size": 222206607,
+      "mtime_ns": 1794753307783914222
+    },
+    "data/features/emails/validation.npz": {
+      "size": 65378697,
+      "mtime_ns": 1794755078535881753
+    },
+    "data/features/emails/validation_rows.parquet": {
+      "size": 2994981,
+      "mtime_ns": 1794755078557882014
+    },
+    "data/splits/emails/validation.parquet": {
+      "size": 77011393,
+      "mtime_ns": 1794753307835914837
+    }
+  },
+  "classes": {
+    "0": "legitimate",
+    "1": "phishing"
+  },
+  "train_rows": 209758,
+  "validation_rows": 44947,
+  "n_features": 50006,
+  "test_evaluated": false,
+  "external_evaluated": false,
+  "feature_transformers_modified": false,
+  "inherited_limitations": [
+    "CSV numeric labels preserved; phishing versus spam semantics and exact file lineage unverified.",
+    "Enron is presumed legitimate; source and historical-era bias remain.",
+    "Paragraph/quoted-block/reference grouping is heuristic; undetected semantic or partial thread overlap can remain.",
+    "URL extraction covers explicit scheme/www links only; obfuscated and bare domains remain in text.",
+    "Use class weights and PR-AUC/per-class metrics; select any resampling using training only; evaluate source-specific performance."
+  ],
+  "versions": {
+    "python": "3.11.18",
+    "sklearn": "1.9.1"
+  }
+}

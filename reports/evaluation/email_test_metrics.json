@@ -1,0 +1,95 @@
+{
+  "samples": 44947,
+  "accuracy": 0.9966182392595724,
+  "phishing_precision": 0.9840899448451421,
+  "phishing_recall": 0.9836726039016115,
+  "phishing_f1": 0.983881230116649,
+  "average_precision": 0.9983884816713993,
+  "roc_auc": 0.9998089700343535,
+  "confusion_matrix": {
+    "TN": 40156,
+    "FP": 75,
+    "FN": 77,
+    "TP": 4639
+  },
+  "false_positive_rate": 0.0018642340483706595,
+  "false_negative_rate": 0.016327396098388465,
+  "ranking_metrics_defined": true,
+  "selected_model": "linear_svm_none",
+  "threshold": -0.24541511286701478,
+  "score_type": "uncalibrated_margin",
+  "inference_seconds": 0.07984584300720599,
+  "inference_ms_per_sample": 0.0017764443234744474,
+  "timing_scope": "model scoring only; excludes loading and feature extraction",
+  "overlap_checks": {
+    "train_test_exact_hash_overlap": 0,
+    "train_test_duplicate_group_overlap": 0
+  },
+  "label_mapping": {
+    "0": "legitimate",
+    "1": "phishing"
+  },
+  "by_source": {
+    "Nazario_5": {
+      "samples": 349,
+      "accuracy": 0.9856733524355301,
+      "phishing_precision": 1.0,
+      "phishing_recall": 0.9772727272727273,
+      "phishing_f1": 0.9885057471264368,
+      "average_precision": 0.9993765188568592,
+      "roc_auc": 0.9988372093023256,
+      "confusion_matrix": {
+        "TN": 129,
+        "FP": 0,
+        "FN": 5,
+        "TP": 215
+      },
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.022727272727272728,
+      "ranking_metrics_defined": true
+    },
+    "email_text": {
+      "samples": 6356,
+      "accuracy": 0.9852108244178729,
+      "phishing_precision": 0.9950517318938371,
+      "phishing_recall": 0.9839857651245552,
+      "phishing_f1": 0.9894878103332588,
+      "average_precision": 0.999175153044082,
+      "roc_auc": 0.9984203401829105,
+      "confusion_matrix": {
+        "TN": 1838,
+        "FP": 22,
+        "FN": 72,
+        "TP": 4424
+      },
+      "false_positive_rate": 0.011827956989247311,
+      "false_negative_rate": 0.01601423487544484,
+      "ranking_metrics_defined": true
+    },
+    "enron": {
+      "samples": 38242,
+      "accuracy": 0.998614089221275,
+      "phishing_precision": 0.0,
+      "phishing_recall": 0.0,
+      "phishing_f1": 0.0,
+      "average_precision": null,
+      "roc_auc": null,
+      "confusion_matrix": {
+        "TN": 38189,
+        "FP": 53,
+        "FN": 0,
+        "TP": 0
+      },
+      "false_positive_rate": 0.001385910778724962,
+      "false_negative_rate": null,
+      "ranking_metrics_defined": false
+    }
+  },
+  "limitations": [
+    "CSV numeric labels preserved; phishing versus spam semantics and exact file lineage unverified.",
+    "Enron is presumed legitimate; source and historical-era bias remain.",
+    "Paragraph/quoted-block/reference grouping is heuristic; undetected semantic or partial thread overlap can remain.",
+    "URL extraction covers explicit scheme/www links only; obfuscated and bare domains remain in text.",
+    "Use class weights and PR-AUC/per-class metrics; select any resampling using training only; evaluate source-specific performance."
+  ]
+}

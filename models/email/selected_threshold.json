@@ -1,0 +1,27 @@
+{
+  "model": "linear_svm_none",
+  "artifact": "models/email/linear_svm_none.joblib",
+  "threshold": -0.24541511286701478,
+  "score_type": "uncalibrated_margin",
+  "positive_label": 1,
+  "prediction_rule": "score >= threshold",
+  "tuned_on": "validation only",
+  "objective": "maximum phishing F1; ties prefer recall",
+  "validation_metrics": {
+    "phishing_precision": 0.9778854254422915,
+    "phishing_recall": 0.984520780322307,
+    "phishing_f1": 0.9811918850380389,
+    "average_precision": 0.9973344979797072,
+    "roc_auc": 0.9994678737078784,
+    "confusion_matrix": [
+      [
+        40126,
+        105
+      ],
+      [
+        73,
+        4643
+      ]
+    ]
+  }
+}

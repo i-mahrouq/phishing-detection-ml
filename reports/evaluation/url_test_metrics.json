@@ -1,0 +1,58 @@
+{
+  "samples": 35202,
+  "accuracy": 0.9959945457644452,
+  "phishing_precision": 0.9990580002691428,
+  "phishing_recall": 0.9915191986644407,
+  "phishing_f1": 0.9952743238261219,
+  "average_precision": 0.9980744989137921,
+  "roc_auc": 0.997536130197715,
+  "confusion_matrix": {
+    "TN": 20213,
+    "FP": 14,
+    "FN": 127,
+    "TP": 14848
+  },
+  "false_positive_rate": 0.0006921441637415336,
+  "false_negative_rate": 0.008480801335559266,
+  "ranking_metrics_defined": true,
+  "selected_model": "random_forest",
+  "threshold": 0.4754530853344011,
+  "score_type": "probability",
+  "inference_seconds": 0.24994765198789537,
+  "inference_ms_per_sample": 0.007100382137034696,
+  "timing_scope": "model scoring only; excludes loading and feature extraction",
+  "overlap_checks": {
+    "train_test_url_key_overlap": 0,
+    "train_test_hostname_overlap": 0
+  },
+  "label_mapping": {
+    "0": "legitimate",
+    "1": "phishing"
+  },
+  "by_source": {
+    "phiusiil": {
+      "samples": 35202,
+      "accuracy": 0.9959945457644452,
+      "phishing_precision": 0.9990580002691428,
+      "phishing_recall": 0.9915191986644407,
+      "phishing_f1": 0.9952743238261219,
+      "average_precision": 0.9980744989137921,
+      "roc_auc": 0.997536130197715,
+      "confusion_matrix": {
+        "TN": 20213,
+        "FP": 14,
+        "FN": 127,
+        "TP": 14848
+      },
+      "false_positive_rate": 0.0006921441637415336,
+      "false_negative_rate": 0.008480801335559266,
+      "ranking_metrics_defined": true
+    }
+  },
+  "limitations": [
+    "Related subdomains can overlap; no registrable-domain or temporal guarantee.",
+    "PhishTank is phishing-only: measure phishing recall, not accuracy or false-positive rate.",
+    "Schemeless/non-HTTP(S) URLs rejected; malformed percent escapes retained as a lexical flag.",
+    "Original URL strings preserved; identity matching does not exhaust every server-specific URL equivalence."
+  ]
+}

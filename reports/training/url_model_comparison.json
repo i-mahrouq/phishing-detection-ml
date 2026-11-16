@@ -1,0 +1,126 @@
+{
+  "seed": 42,
+  "task": "url",
+  "configurations": [
+    {
+      "name": "logistic_regression",
+      "artifact": "models/url/logistic_regression.joblib",
+      "score_type": "probability",
+      "default_threshold": 0.5,
+      "training_seconds": 0.3625006670044968,
+      "validation_inference_seconds": 0.002961834004963748,
+      "validation_inference_ms_per_row": 8.413823092334948e-05,
+      "validation_default_threshold": {
+        "phishing_precision": 0.9992547930357022,
+        "phishing_recall": 0.984909188034188,
+        "phishing_f1": 0.9920301308134647,
+        "average_precision": 0.9968091456652919,
+        "roc_auc": 0.9958717708510287,
+        "confusion_matrix": [
+          [
+            20215,
+            11
+          ],
+          [
+            226,
+            14750
+          ]
+        ]
+      },
+      "warnings": []
+    },
+    {
+      "name": "random_forest",
+      "artifact": "models/url/random_forest.joblib",
+      "score_type": "probability",
+      "default_threshold": 0.5,
+      "training_seconds": 5.268424248002702,
+      "validation_inference_seconds": 0.16536591200565454,
+      "validation_inference_ms_per_row": 0.004697628316733553,
+      "validation_default_threshold": {
+        "phishing_precision": 0.999191211161286,
+        "phishing_recall": 0.9899172008547008,
+        "phishing_f1": 0.9945325864555731,
+        "average_precision": 0.9978181819672285,
+        "roc_auc": 0.9971120294333222,
+        "confusion_matrix": [
+          [
+            20214,
+            12
+          ],
+          [
+            151,
+            14825
+          ]
+        ]
+      },
+      "warnings": []
+    }
+  ],
+  "selected_model": "random_forest",
+  "selection": "validation average precision, then default-threshold phishing F1, then recall",
+  "selected_threshold": 0.4754530853344011,
+  "selected_validation_metrics": {
+    "phishing_precision": 0.9991241072631721,
+    "phishing_recall": 0.9901842948717948,
+    "phishing_f1": 0.9946341136226441,
+    "average_precision": 0.9978181819672285,
+    "roc_auc": 0.9971120294333222,
+    "confusion_matrix": [
+      [
+        20213,
+        13
+      ],
+      [
+        147,
+        14829
+      ]
+    ]
+  },
+  "inputs": {
+    "data/features/urls/feature_report.json": {
+      "size": 2362,
+      "mtime_ns": 1794755136225903178
+    },
+    "models/feature_engineering/urls_schema.json": {
+      "size": 682,
+      "mtime_ns": 1794755136061176668
+    },
+    "data/features/urls/train.parquet": {
+      "size": 12045477,
+      "mtime_ns": 1794755130011492358
+    },
+    "data/splits/urls/train.parquet": {
+      "size": 22361894,
+      "mtime_ns": 1794754008318202170
+    },
+    "data/features/urls/validation.parquet": {
+      "size": 2624582,
+      "mtime_ns": 1794755132188518181
+    },
+    "data/splits/urls/validation.parquet": {
+      "size": 4887212,
+      "mtime_ns": 1794754008355202608
+    }
+  },
+  "classes": {
+    "0": "legitimate",
+    "1": "phishing"
+  },
+  "train_rows": 164283,
+  "validation_rows": 35202,
+  "n_features": 13,
+  "test_evaluated": false,
+  "external_evaluated": false,
+  "feature_transformers_modified": false,
+  "inherited_limitations": [
+    "Related subdomains can overlap; no registrable-domain or temporal guarantee.",
+    "PhishTank is phishing-only: measure phishing recall, not accuracy or false-positive rate.",
+    "Schemeless/non-HTTP(S) URLs rejected; malformed percent escapes retained as a lexical flag.",
+    "Original URL strings preserved; identity matching does not exhaust every server-specific URL equivalence."
+  ],
+  "versions": {
+    "python": "3.11.18",
+    "sklearn": "1.9.1"
+  }
+}

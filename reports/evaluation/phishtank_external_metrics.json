@@ -1,0 +1,17 @@
+{
+  "samples": 24771,
+  "phishing_recall": 0.9866376004198458,
+  "detected_phishing_urls": 24440,
+  "missed_phishing_urls": 331,
+  "selected_model": "random_forest",
+  "threshold": 0.4754530853344011,
+  "score_type": "probability",
+  "overlap_checks": {
+    "train_external_url_key_overlap": 0,
+    "train_external_hostname_overlap": 0,
+    "validation_external_url_key_overlap": 0,
+    "validation_external_hostname_overlap": 0,
+    "test_external_url_key_overlap": 0,
+    "test_external_hostname_overlap": 0
+  }
+}

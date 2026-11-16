@@ -1,0 +1,22 @@
+{
+  "dtype": "float32",
+  "format": "CSR",
+  "n_features": 50006,
+  "tfidf_columns": [
+    0,
+    50000
+  ],
+  "tfidf": "word unigrams/bigrams; vocabulary/order in email_transformer.joblib",
+  "numeric_columns": [
+    "text_length",
+    "word_count",
+    "url_count",
+    "suspicious_keyword_count",
+    "subject_length",
+    "exclamation_count"
+  ],
+  "numeric_offset": 50000,
+  "numeric_scaling": "MaxAbsScaler fitted on training only",
+  "character_ngrams": false,
+  "reason": "Omitted to limit memory and computation"
+}

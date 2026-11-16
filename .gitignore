@@ -1,0 +1,59 @@
+# Local datasets: retain on disk, publish documentation only.
+/data/**
+!/data/**/
+!/data/**/README.md
+
+# Only selected V1 estimators and required inference artifacts are published.
+/models/**
+!/models/email/
+!/models/email/selected_model.joblib
+!/models/email/linear_svm_none.joblib
+!/models/email/selected_threshold.json
+!/models/url/
+!/models/url/selected_model.joblib
+!/models/url/random_forest.joblib
+!/models/url/selected_threshold.json
+!/models/feature_engineering/
+!/models/feature_engineering/email_transformer.joblib
+!/models/feature_engineering/emails_schema.json
+!/models/feature_engineering/urls_schema.json
+
+# Small aggregate V1 results only; row-level errors/experimental runs stay local.
+/reports/**
+!/reports/evaluation/
+!/reports/evaluation/*_test_metrics.json
+!/reports/evaluation/phishtank_external_metrics.json
+!/reports/evaluation/*_confusion_matrix.png
+!/reports/training/
+!/reports/training/email_model_comparison.json
+!/reports/training/url_model_comparison.json
+
+# Historical research and user notebooks preserved locally pending review.
+/archive/
+/notebooks/
+
+# Python and local tooling.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Local secrets; allow only a credential-free example if one is supplied.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# Temporary output.
+*.log
+*.tmp
+*.tmp.*
+.DS_Store

@@ -1,0 +1,23 @@
+{
+  "columns": [
+    "url_length",
+    "hostname_length",
+    "dot_count",
+    "subdomain_count",
+    "digit_count",
+    "hyphen_count",
+    "special_character_count",
+    "is_https",
+    "hostname_is_ip",
+    "url_entropy",
+    "suspicious_keyword_count",
+    "path_length",
+    "query_parameter_count"
+  ],
+  "dtype": "float32",
+  "fitted": false,
+  "input": "url_original (preserves case, percent escapes, query order and punctuation)",
+  "subdomain_definition": "max(hostname label count - 2, 0), zero for IPs; heuristic, not public-suffix aware",
+  "scaling": "none; raw finite lexical features",
+  "forbidden_features": "labels, source identifiers, webpage-derived columns"
+}
