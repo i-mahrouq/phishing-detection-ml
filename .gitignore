@@ -1,7 +1,8 @@
-# Local datasets: retain on disk, publish documentation only.
-/data/**
-!/data/**/
-!/data/**/README.md
+# Local datasets are preserved on disk, not redistributed.
+/data/
+
+# Local academic documentation and audit evidence.
+/docs/
 
 # Only selected V1 estimators and required inference artifacts are published.
 /models/**
@@ -30,7 +31,6 @@
 
 # Historical research and user notebooks preserved locally pending review.
 /archive/
-/notebooks/
 
 # Python and local tooling.
 __pycache__/
@@ -48,7 +48,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
-.streamlit/secrets.toml
 *.pem
 *.key
 
