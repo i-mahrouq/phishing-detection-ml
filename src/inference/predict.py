@@ -14,11 +14,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 from threadpoolctl import threadpool_limits
 from src.features.url_features import URLFeatures
 from src.preprocessing.emails import clean, urls
-from src.training.pipeline import scores
+from src.training.common import scores
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 RISK_BANDS = {'email': 0.5, 'url': 0.10}
@@ -79,10 +82,18 @@ class Predictor:
         if not isinstance(threshold, (int, float)) or not np.isfinite(threshold):
             raise ValueError('Saved threshold must be a finite number')
         model = self._read_artifact(path)
-        expected = LinearSVC if kind == 'email' else RandomForestClassifier
-        score_type = 'uncalibrated_margin' if kind == 'email' else 'probability'
+        expected = (LinearSVC, LogisticRegression) if kind == 'email' else (RandomForestClassifier, Pipeline)
+        if isinstance(model, Pipeline) and (
+            list(model.named_steps) != ['scaler', 'classifier']
+            or not isinstance(model.named_steps['scaler'], StandardScaler)
+            or not isinstance(model.named_steps['classifier'], LogisticRegression)
+        ):
+            raise ValueError('Only the retained scaled URL Logistic Regression pipeline is supported')
+        score_type = 'probability' if hasattr(model, 'predict_proba') else 'uncalibrated_margin'
         if not isinstance(model, expected) or list(model.classes_) != [0, 1] or config['score_type'] != score_type:
             raise ValueError('Model type, classes or score type are incompatible')
+        if score_type == 'probability' and not 0 <= threshold <= 1:
+            raise ValueError('Probability threshold must be between 0 and 1')
         if kind == 'email':
             transformer = self._read_artifact(self.root/'models/feature_engineering/email_transformer.joblib')
             if transformer.schema() != schema:
@@ -108,7 +119,7 @@ class Predictor:
         return dict(prediction='PHISHING' if score >= threshold else 'LEGITIMATE',
                     score=score, threshold=threshold, risk_level=risk_level(kind, score, threshold),
                     model=config['model'], score_type=score_type,
-                    score_note=('Uncalibrated SVM margin, NOT a probability.' if kind == 'email' else
+                    score_note=('Uncalibrated SVM margin, NOT a probability.' if score_type == 'uncalibrated_margin' else
                                 'Model-estimated phishing probability, NOT guaranteed real-world risk.'),
                     risk_note=f'Provisional native-score bands: LOW < threshold - {RISK_BANDS[kind]}; HIGH >= threshold + {RISK_BANDS[kind]}; MEDIUM otherwise. Not calibrated.')
 

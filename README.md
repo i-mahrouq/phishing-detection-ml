@@ -125,7 +125,7 @@ python -m src.inference.predict url --help
 | Field | Meaning |
 |---|---|
 | `prediction` | `PHISHING` or `LEGITIMATE`, using `score >= threshold` |
-| `score` | Native SVM margin for email, or Random Forest class-1 estimate for URLs |
+| `score` | Native margin for Linear SVM, or class-1 estimate for Logistic Regression/Random Forest |
 | `threshold` | Saved validation-selected decision threshold |
 | `model` | Selected candidate name |
 | `score_type` | `uncalibrated_margin` or `probability` |
@@ -161,14 +161,17 @@ phishing-detection-ml/
 │   │   └── pipeline.py
 │   ├── training/
 │   │   ├── __init__.py
-│   │   └── pipeline.py
+│   │   ├── train_email.py
+│   │   ├── train_url.py
+│   │   ├── common.py
+│   │   └── pipeline.py          # Backward-compatible two-task command
 │   ├── evaluation/
 │   │   ├── __init__.py
 │   │   └── pipeline.py
 │   └── inference/
 │       ├── __init__.py
 │       └── predict.py
-├── tests/                     # Seven maintained test modules listed below
+├── tests/                     # Eight maintained test modules listed below
 ├── models/
 │   ├── email/
 │   ├── url/
@@ -217,12 +220,15 @@ phishing-detection-ml/
 | `src/features/email_features.py` | `EmailFeatures`: train-fitted word TF-IDF plus six MaxAbs-scaled numerical indicators; reused unchanged at inference |
 | `src/features/url_features.py` | `URLFeatures`: stateless extraction of the fixed 13 lexical columns |
 | `src/features/pipeline.py` | Generate and verify saved matrices, row alignment, schemas and feature reports for both tasks |
-| `src/training/pipeline.py` | Train four email and two URL configurations; select on validation AP, tune the selected threshold on validation F1, save and verify artifacts; expose shared score extraction |
+| `src/training/train_email.py` | Independently train/compare Logistic Regression and Linear SVM, retaining original unweighted/balanced configurations |
+| `src/training/train_url.py` | Independently train/compare scaled Logistic Regression and Random Forest |
+| `src/training/common.py` | Shared train/validation loading, leakage checks, fitting workflow, metrics, scoring, threshold selection and verification; no algorithm constructors |
+| `src/training/pipeline.py` | Small compatibility wrapper for the original two-task command and historical utility imports |
 | `src/evaluation/pipeline.py` | Evaluate frozen test/external features, calculate metrics and overlaps, and save confusion plots/error indices |
 | `src/inference/predict.py` | CLI/menu, input validation, lazy artifact loading, schema checks, feature transformation and threshold-based prediction |
 | Each package `__init__.py` | Retains the package/import structure |
 
-Do not casually rename `src.features.email_features.EmailFeatures`: joblib loads the saved transformer through that class path. Inference imports the shared `scores` helper from the training module, but importing it does not start training.
+Do not casually rename `src.features.email_features.EmailFeatures`: joblib loads the saved transformer through that class path. Inference imports the shared `scores` helper from `src.training.common`; importing it does not start training.
 
 ### Models and schemas
 
@@ -285,6 +291,7 @@ Generated datasets and raw originals remain local. ZIP and notebook-checkpoint c
 | `tests/test_training.py` | Tiny synthetic fits, train/validation boundaries, selection and serialization |
 | `tests/test_evaluation.py` | Metric formulas, single-class restrictions, error artifacts and model compatibility |
 | `tests/test_inference.py` | Frozen preprocessing/scoring parity, validation, JSON and interactive behavior |
+| `tests/test_training_tasks.py` | Independent task roots/CLI, constructor equivalence, validation/test separation, retained-model inference and refusal to overwrite evidence |
 | `tests/test_packaging.py` | Offline prediction and independent Email-only/URL-only artifact bundles without datasets |
 
 ### Local documentation and archive
@@ -310,15 +317,17 @@ python -m pytest -q
 python -m pip check
 ```
 
-The last cleanup verification passed all **22 maintained tests**, including both independent artifact bundles. Tests use tiny temporary training fixtures where needed; they do not retrain the preserved project models.
+The pre-refactor baseline passed 22 tests; the updated suite passed **28 maintained tests**, including independent training roots, evaluation, retained-model loading and both artifact bundles. Tests use tiny temporary training fixtures where needed; they do not retrain the preserved project models.
 
 For the complete saved local run:
 
 ```bash
 python -m src.preprocessing.urls --verify
 python -m src.features.pipeline --verify
-python -m src.training.pipeline --verify
-python -m src.evaluation.pipeline --verify
+python -m src.training.train_email --verify
+python -m src.training.train_url --verify
+python -m src.evaluation.pipeline --kind email --verify
+python -m src.evaluation.pipeline --kind url --verify
 ```
 
 These verifiers require the matching local data, candidate artifacts and reports. A code-only clone can run pretrained inference and maintained tests, but cannot verify or regenerate the original experiment without those additional files.
@@ -348,8 +357,10 @@ REPRO_ROOT=/absolute/path/to/fresh-reproduction
 python -m src.preprocessing.emails --root "$REPRO_ROOT" --seed 42 --workers 4
 python -m src.preprocessing.urls --root "$REPRO_ROOT" --seed 42
 python -m src.features.pipeline --root "$REPRO_ROOT" --seed 42
-python -m src.training.pipeline --root "$REPRO_ROOT" --seed 42
-python -m src.evaluation.pipeline --root "$REPRO_ROOT"
+python -m src.training.train_email --root "$REPRO_ROOT" --seed 42
+python -m src.training.train_url --root "$REPRO_ROOT" --seed 42
+python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind email
+python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind url
 ```
 
 Both preprocessing tasks must complete before the shared feature stage. Email preparation groups related messages; URL preparation separates exact hostnames. Both target approximately 70/15/15 train/validation/test partitions. Learned transforms fit training only. Candidates are selected on validation AP, then the selected threshold maximizes validation F1; held-out evaluation follows selection.
@@ -360,12 +371,40 @@ Verify and use the newly generated artifacts:
 
 ```bash
 python -m src.features.pipeline --root "$REPRO_ROOT" --verify
-python -m src.training.pipeline --root "$REPRO_ROOT" --verify
-python -m src.evaluation.pipeline --root "$REPRO_ROOT" --verify
+python -m src.training.train_email --root "$REPRO_ROOT" --verify
+python -m src.training.train_url --root "$REPRO_ROOT" --verify
+python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind email --verify
+python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind url --verify
 python -m src.inference.predict --root "$REPRO_ROOT" url --url 'https://www.example.com' --json
 ```
 
 Models and reports stay under the new root. A full original-corpus retraining was not performed merely for cleanup.
+
+### Independent training and comparison
+
+The active algorithm families are exactly **Email: Logistic Regression and Linear SVM; URL: Logistic Regression and Random Forest**. Email's unweighted/balanced settings are four configurations of two families, not four different algorithms. Retaining them preserves the original selection experiment. No other algorithm or dependency was active in V1 to remove; XGBoost/LightGBM remain historical V2 research.
+
+With this task's saved features/splits already available:
+
+```bash
+python -m src.training.train_email
+python -m src.training.train_url
+```
+
+Each command accesses only its own task artifacts/data. Completed runs verify and skip; these commands do not silently refit existing models. Use `--root` with a fresh prepared root for deliberate retraining. Preprocessing/feature module names and serialized transformer paths remain unchanged; no splits or features are regenerated by training.
+
+Compare every saved candidate on its original **validation** partition, without fitting or tuning:
+
+```bash
+python -m src.training.train_email --compare
+python -m src.training.train_url --compare
+```
+
+Output includes accuracy, phishing precision/recall/F1, confusion matrix, AP/ROC-AUC, artifact hash, original reported fit time and newly measured model-scoring time. `--output /path/to/new-comparison.json` saves a new JSON and refuses existing files. Fit time is explicitly sourced from the historical report; it is not remeasured. New training reports also include accuracy. Existing report files are never edited to backfill it.
+
+Held-out test evaluation remains separate and evaluates only the frozen selected model at its saved validation threshold. `--kind email` needs no URL artifacts; `--kind url` needs no email artifacts and retains the original positive-only external PhishTank check. Fresh independent evaluations use task-specific start/summary files. The legacy two-task command remains supported for existing workflows; do not mix modes in a partially completed evaluation root. Partial model/evaluation artifacts cause a refusal instead of an automatic overwrite.
+
+If a future deliberate run selects Logistic Regression, inference now accepts that retained model (including the scaled URL Pipeline) with its native score type. Original Email SVM/URL RF predictions and configuration remain unchanged. Streamlit was already absent before this refactor; no UI was removed or recreated, so its startup cannot be verified here.
 
 ## 7. Preserved V1 results and limitations
 

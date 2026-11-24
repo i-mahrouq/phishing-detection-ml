@@ -10,7 +10,7 @@ import pandas as pd
 from scipy import sparse
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, average_precision_score, roc_auc_score
 from threadpoolctl import threadpool_limits
-from src.training.pipeline import scores, write_json
+from src.training.common import scores, write_json
 from src.features.url_features import URL_COLUMNS
 
 
@@ -45,16 +45,19 @@ def finite(value):
     return bool(np.isfinite(value)) if isinstance(value,(int,float)) else True
 
 
-def frozen_paths(root):
+def frozen_paths(root, task=None):
     paths=[]
-    for kind in ('email','url'):
+    for kind in ((task,) if task else ('email','url')):
         paths += [root/'models'/kind/'selected_model.joblib',root/'models'/kind/'selected_threshold.json',
                   root/'reports/training'/f'{kind}_model_comparison.json',
                   root/'models/feature_engineering'/f'{kind}s_schema.json',
                   root/'data/features'/(kind+'s')/'feature_report.json']
         paths += [root/'data/features'/(kind+'s')/('test.npz' if kind=='email' else 'test.parquet')]
-    paths += [root/'models/feature_engineering/email_transformer.joblib',
-              root/'data/features/emails/test_rows.parquet',root/'data/features/urls/external.parquet']
+    if task in (None, 'email'):
+        paths += [root/'models/feature_engineering/email_transformer.joblib',
+                  root/'data/features/emails/test_rows.parquet']
+    if task in (None, 'url'):
+        paths.append(root/'data/features/urls/external.parquet')
     return {str(p.relative_to(root)):dict(size=p.stat().st_size,mtime_ns=p.stat().st_mtime_ns) for p in paths}
 
 
@@ -100,9 +103,9 @@ def load_selected(root, kind):
     assert np.isfinite(config['threshold'])
     model=joblib.load(directory/'selected_model.joblib')
     assert list(model.classes_)==[0,1]
-    expected='uncalibrated_margin' if kind=='email' else 'probability'
+    expected='probability' if hasattr(model,'predict_proba') else 'uncalibrated_margin'
     assert config['score_type']==expected
-    assert hasattr(model,'decision_function') if kind=='email' else hasattr(model,'predict_proba')
+    assert hasattr(model,'predict_proba') if expected=='probability' else hasattr(model,'decision_function')
     return model,config
 
 
@@ -132,11 +135,20 @@ def overlap(root,kind,rows):
     return {f'train_test_{column}_overlap':len(set(train[column]) & set(rows[column])) for column in columns}
 
 
-def verify(root):
+def verify(root, task=None):
     out=root/'reports/evaluation'
-    summary=json.loads((out/'evaluation_summary.json').read_text())
-    assert summary['completed'] and summary['frozen_artifacts']==frozen_paths(root)
-    for name in ('email_test','url_test','phishtank_external'):
+    summary_path=out/(f'{task}_evaluation_summary.json' if task else 'evaluation_summary.json')
+    if task and not summary_path.exists():
+        summary_path=out/'evaluation_summary.json'  # Existing historical two-task run.
+    summary=json.loads(summary_path.read_text())
+    current=frozen_paths(root,task)
+    assert summary['completed']
+    if task:
+        assert all(summary['frozen_artifacts'].get(path)==metadata for path,metadata in current.items())
+    else:
+        assert summary['frozen_artifacts']==current
+    names=('email_test',) if task=='email' else ('url_test','phishtank_external') if task=='url' else ('email_test','url_test','phishtank_external')
+    for name in names:
         report=json.loads((out/f'{name}_metrics.json').read_text())
         assert finite(report)
         kind='email' if name=='email_test' else 'url'
@@ -154,18 +166,28 @@ def verify(root):
     return dict(completed=True,models_and_thresholds_unchanged=True,reports_verified=True)
 
 
-def run(root):
+def run(root, task=None):
     out=root/'reports/evaluation'
-    if (out/'evaluation_summary.json').exists():
-        logging.info('Existing evaluation verified: %s',verify(root));return
-    assert json.loads((root/'reports/training/training_summary.json').read_text())['completed']
-    before=frozen_paths(root)
+    summary_name=f'{task}_evaluation_summary.json' if task else 'evaluation_summary.json'
+    if (out/summary_name).exists() or (task and (out/'evaluation_summary.json').exists()):
+        logging.info('Existing evaluation verified: %s',verify(root,task));return
+    if task:
+        from src.training.common import verify_kind
+        verify_kind(root,task)
+    else:
+        assert json.loads((root/'reports/training/training_summary.json').read_text())['completed']
+    before=frozen_paths(root,task)
     out.mkdir(parents=True,exist_ok=True)
-    marker=out/'evaluation_started.json'
+    marker=out/(f'{task}_evaluation_started.json' if task else 'evaluation_started.json')
     if marker.exists(): raise RuntimeError('Partial prior evaluation detected; inspect logs rather than automatically rerun')
+    kinds=(task,) if task else ('email','url')
+    owned_files=[out/name for kind in kinds for name in
+                 (f'{kind}_test_metrics.json', f'{kind}_test_errors.parquet', f'{kind}_confusion_matrix.png')]
+    if any(path.exists() for path in owned_files) or ('url' in kinds and (out/'phishtank_external_metrics.json').exists()):
+        raise RuntimeError('Existing evaluation outputs without the expected summary; refusing to overwrite evidence')
     write_json(marker,{'frozen_artifacts':before})
     flags=[];results={}
-    for kind in ('email','url'):
+    for kind in kinds:
         logging.info('Evaluating %s test',kind)
         model,config=load_selected(root,kind)
         x,y,rows=load_data(root,kind)
@@ -205,23 +227,26 @@ def run(root):
             write_json(out/'phishtank_external_metrics.json',external)
             results['external']=external
             del x,y,values,rows
-    assert before==frozen_paths(root),'Frozen inputs changed during evaluation'
-    write_json(out/'evaluation_summary.json',dict(completed=True,frozen_artifacts=before,
-               report_files=['email_test_metrics.json','url_test_metrics.json','phishtank_external_metrics.json'],
+    assert before==frozen_paths(root,task),'Frozen inputs changed during evaluation'
+    report_files=[f'{kind}_test_metrics.json' for kind in kinds]
+    if 'url' in kinds: report_files.append('phishtank_external_metrics.json')
+    write_json(out/summary_name,dict(completed=True,frozen_artifacts=before,
+               report_files=report_files,
                review_flags=flags,models_changed=False,thresholds_changed=False,
                source_analysis_note='Single-class source groups have undefined ranking metrics and rates set to null.',
                privacy='Error artifacts contain split row positions, labels and scores only; no raw content or URLs.',
                results={name:{k:v for k,v in result.items() if k in ('samples','accuracy','phishing_recall','phishing_f1','average_precision')} for name,result in results.items()}))
-    logging.info('Evaluation verified: %s',verify(root))
+    logging.info('Evaluation verified: %s',verify(root,task))
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2])
+    parser.add_argument('--kind',choices=('email','url'),help='Evaluate/verify only this task; default is legacy two-task mode')
     parser.add_argument('--verify',action='store_true');args=parser.parse_args()
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
     with threadpool_limits(limits=2):
-        if args.verify: print(json.dumps(verify(args.root)))
-        else: run(args.root)
+        if args.verify: print(json.dumps(verify(args.root,args.kind)))
+        else: run(args.root,args.kind)
 
 if __name__=='__main__':main()
