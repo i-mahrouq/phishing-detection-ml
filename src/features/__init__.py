@@ -1,1 +1,1 @@
-"""Train-only text transformers and offline lexical feature extraction."""
+# Feature package: provide independent email and URL feature extractors.

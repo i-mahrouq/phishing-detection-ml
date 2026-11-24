@@ -1,0 +1,79 @@
+<!-- Local interface: submit email or URL input and display the saved model prediction. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phishing detection</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #202c3c; background: #f5f7fa; }
+    h1 { margin-bottom: 4px; } h2 { margin-top: 0; }
+    .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    section { background: white; border: 1px solid #d7dde5; border-radius: 8px; padding: 22px; }
+    label { display: block; margin: 12px 0; }
+    input, textarea, button { font: inherit; box-sizing: border-box; }
+    input, textarea { display: block; width: 100%; padding: 9px; border: 1px solid #9ba6b4; border-radius: 4px; margin-top: 5px; }
+    textarea { resize: vertical; }
+    button { background: #2458a6; color: white; border: 0; padding: 10px 18px; border-radius: 4px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .result { margin-top: 18px; overflow-wrap: anywhere; white-space: pre-line; }
+    .result[data-state="PHISHING"], .result[data-state="error"] { color: #a12424; }
+    .result[data-state="LEGITIMATE"] { color: #17613c; }
+    .note { color: #526071; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Phishing detection</h1>
+  <p>Check an email or URL using the saved V1 models.</p>
+  <div class="forms">
+    <section>
+      <h2>Email</h2>
+      <form data-kind="email">
+        <label>Subject (optional)<input name="subject" autocomplete="off"></label>
+        <label>Body<textarea name="body" rows="7" required placeholder="Paste the email text here"></textarea></label>
+        <button type="submit">Check email</button>
+      </form>
+      <div class="result" role="status" aria-live="polite"></div>
+    </section>
+    <section>
+      <h2>URL</h2>
+      <form data-kind="url">
+        <label>URL<input name="url" type="url" required placeholder="https://www.example.com" maxlength="65536" autocomplete="off"></label>
+        <button type="submit">Check URL</button>
+      </form>
+      <div class="result" role="status" aria-live="polite"></div>
+    </section>
+  </div>
+  <p class="note">Inputs are processed locally and are not saved by this interface. URLs are not visited. Model predictions can be wrong; scores are not a guarantee of safety.</p>
+  <script>
+    // Form setup: connect each form to its matching prediction endpoint.
+    document.querySelectorAll('form').forEach(form => {
+      // Prediction stage: send input locally and show the result or error.
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = form.querySelector('button');
+        const output = form.parentElement.querySelector('.result');
+        button.disabled = true;
+        output.dataset.state = '';
+        output.textContent = 'Checking…';
+        try {
+          const response = await fetch(`/api/${form.dataset.kind}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(Object.fromEntries(new FormData(form)))
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Request failed');
+          output.dataset.state = result.prediction;
+          output.textContent = `${result.prediction}\nModel: ${result.model}\nScore: ${result.score.toFixed(6)}\nThreshold: ${result.threshold.toFixed(6)}\n${result.score_note}`;
+        } catch (error) {
+          output.dataset.state = 'error';
+          output.textContent = error.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>

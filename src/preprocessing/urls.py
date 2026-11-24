@@ -1,4 +1,5 @@
-"""Offline URL preparation. No URLs are fetched and no learned features are fitted."""
+# URL preparation: validate addresses, remove duplicates and save hostname-separated splits.
+
 from __future__ import annotations
 import argparse
 from collections import Counter
@@ -13,20 +14,14 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .emails import digest  # Existing stable content-hash utility; does not run emails.
+from .common import digest
 
 VERSION = 1
 NAMES = ('train', 'validation', 'test')
 
 
+# Cleaning stage: validate URL syntax while preserving original lexical evidence.
 def normalize_url(value):
-    """Conservative normalization; preserve original URL and all lexical evidence.
-
-    Only scheme/hostname case, IDNA host encoding, and surrounding whitespace are
-    normalized in model text. Deduplication additionally ignores fragments,
-    default ports and the empty-vs-root path. Never decode escapes, sort queries,
-    drop credentials, remove tracking fields, or collapse path components.
-    """
     raw = '' if value is None else str(value)
     value = raw.strip()
     if not value:
@@ -40,34 +35,47 @@ def normalize_url(value):
         host = parsed.hostname
         if not host:
             raise ValueError('missing_hostname')
-        port = parsed.port  # Validate numeric range without network access.
+        port = parsed.port
         host = host.rstrip('.')
         try:
             host = str(ipaddress.ip_address(host))
         except ValueError:
             host = host.encode('idna').decode('ascii').lower()
-            if len(host) > 253 or '.' not in host or any(
-                not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label)
-                for label in host.split('.')
+            if (
+                len(host) > 253
+                or '.' not in host
+                or any(
+                    not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label)
+                    for label in host.split('.')
+                )
             ):
                 raise ValueError('invalid_hostname')
         hostname = host
         display_host = '[' + host + ']' if ':' in host else host
-        # Preserve the original userinfo and explicit port spelling as evidence.
+
         userinfo = parsed.netloc.rsplit('@', 1)[0] + '@' if '@' in parsed.netloc else ''
         authority_tail = parsed.netloc.rsplit('@', 1)[-1]
-        port_text = authority_tail[authority_tail.rfind(':'):] if port is not None else ''
+        port_text = authority_tail[authority_tail.rfind(':') :] if port is not None else ''
         netloc = userinfo + display_host + port_text
-        # Replace authority only; preserve empty query/fragment delimiters too.
-        suffix = value[value.index('://') + 3 + len(parsed.netloc):]
+
+        suffix = value[value.index('://') + 3 + len(parsed.netloc) :]
         normalized = parsed.scheme.lower() + '://' + netloc + suffix
         default_port = (parsed.scheme.lower(), port) in (('http', 80), ('https', 443))
-        identity_netloc = userinfo + display_host + ('' if default_port else (':' + str(port) if port is not None else ''))
-        identity = urlunsplit((parsed.scheme.lower(), identity_netloc,
-                               parsed.path or '/', parsed.query, ''))
-        return dict(url_original=raw, url=normalized, hostname=hostname,
-                    url_key=digest(identity),
-                    has_invalid_percent_escape=bool(re.search(r'%(?![0-9a-fA-F]{2})', value)))
+        identity_netloc = (
+            userinfo
+            + display_host
+            + ('' if default_port else (':' + str(port) if port is not None else ''))
+        )
+        identity = urlunsplit(
+            (parsed.scheme.lower(), identity_netloc, parsed.path or '/', parsed.query, '')
+        )
+        return dict(
+            url_original=raw,
+            url=normalized,
+            hostname=hostname,
+            url_key=digest(identity),
+            has_invalid_percent_escape=bool(re.search(r'%(?![0-9a-fA-F]{2})', value)),
+        )
     except (UnicodeError, ValueError) as exc:
         reason = str(exc)
         if reason not in {'unsupported_or_missing_scheme', 'missing_hostname', 'invalid_hostname'}:
@@ -75,11 +83,13 @@ def normalize_url(value):
         raise ValueError(reason) from exc
 
 
+# Source stage: find supported input files and check that required sources exist.
 def discover(root):
-    """Discover by schema, excluding notebook checkpoint copies."""
     found = {'phiusiil': [], 'phishtank': []}
     for path in sorted((Path(root) / 'data/raw_data/urls').rglob('*.csv')):
-        if '.ipynb_checkpoints' in path.parts or any(p in path.parts for p in ('processed', 'splits')):
+        if '.ipynb_checkpoints' in path.parts or any(
+            p in path.parts for p in ('processed', 'splits')
+        ):
             continue
         columns = set(pd.read_csv(path, nrows=0).columns)
         if {'URL', 'label', 'URLLength', 'Domain'}.issubset(columns):
@@ -92,19 +102,28 @@ def discover(root):
     return {source: paths[0] for source, paths in found.items()}
 
 
+# Ingestion stage: validate source records and collect duplicate and label information.
 def ingest(path, source):
-    columns = ['URL', 'label'] if source == 'phiusiil' else ['url', 'phish_id', 'verified', 'online', 'submission_time']
+    columns = (
+        ['URL', 'label']
+        if source == 'phiusiil'
+        else ['url', 'phish_id', 'verified', 'online', 'submission_time']
+    )
     counts = Counter(raw=0, valid=0)
     reasons = Counter()
     records = []
-    for chunk in pd.read_csv(path, usecols=columns, dtype=str, keep_default_na=False, chunksize=50000):
+    for chunk in pd.read_csv(
+        path, usecols=columns, dtype=str, keep_default_na=False, chunksize=50000
+    ):
         for row in chunk.to_dict('records'):
             row_number = counts['raw'] + 2
             counts['raw'] += 1
             if source == 'phiusiil' and row['label'] not in ('0', '1'):
                 reasons['invalid_label'] += 1
                 continue
-            if source == 'phishtank' and (row['verified'].lower() != 'yes' or row['online'].lower() != 'yes'):
+            if source == 'phishtank' and (
+                row['verified'].lower() != 'yes' or row['online'].lower() != 'yes'
+            ):
                 reasons['not_verified_online'] += 1
                 continue
             try:
@@ -112,10 +131,14 @@ def ingest(path, source):
             except ValueError as exc:
                 reasons[str(exc)] += 1
                 continue
-            record.update(source=source, source_record=row_number,
-                          original_label=row.get('label', 'verified_phishing'),
-                          label=1-int(row['label']) if source == 'phiusiil' else 1,
-                          phish_id=row.get('phish_id', ''), submission_time=row.get('submission_time', ''))
+            record.update(
+                source=source,
+                source_record=row_number,
+                original_label=row.get('label', 'verified_phishing'),
+                label=1 - int(row['label']) if source == 'phiusiil' else 1,
+                phish_id=row.get('phish_id', ''),
+                submission_time=row.get('submission_time', ''),
+            )
             records.append(record)
             counts['valid'] += 1
         logging.info('%s: read %s rows', source, counts['raw'])
@@ -135,13 +158,13 @@ def ingest(path, source):
     return frame, dict(counts=counts, removed=reasons, path=str(path))
 
 
+# Splitting stage: assign hostname groups to fixed training, validation and test folds.
 def split(frame, seed):
-    """Twenty stratified hostname-group folds allocated 14/3/3 (70/15/15).
-
-    Hostname isolation is stronger than exact URL isolation. Related subdomains
-    may still overlap; these are not registrable-domain or temporal holdouts.
-    """
-    if frame.hostname.nunique() < 20 or frame.label.value_counts().min() < 20 or frame.label.nunique() != 2:
+    if (
+        frame.hostname.nunique() < 20
+        or frame.label.value_counts().min() < 20
+        or frame.label.nunique() != 2
+    ):
         raise ValueError('Stratified 70/15/15 grouping requires 20 hosts and 20 examples per class')
     assignment = np.empty(len(frame), dtype=object)
     folds = StratifiedGroupKFold(n_splits=20, shuffle=True, random_state=seed)
@@ -150,6 +173,7 @@ def split(frame, seed):
     return {name: frame.loc[assignment == name].reset_index(drop=True) for name in NAMES}
 
 
+# Verification stage: check labels, duplicate identities and separation between splits.
 def verify(root):
     root = Path(root)
     processed = root / 'data/processed/urls'
@@ -166,7 +190,8 @@ def verify(root):
         assert not hosts & set(frame.hostname), 'Cross-split hostname leakage'
         assert frame.source.eq('phiusiil').all()
         assert frame.label.eq(1 - frame.original_label.astype(int)).all()
-        keys.update(frame.url_key); hosts.update(frame.hostname)
+        keys.update(frame.url_key)
+        hosts.update(frame.hostname)
     assert cleaned.url_key.is_unique and set(cleaned.url_key) == keys
     expected = cleaned.set_index('url_key').sort_index()
     actual = pd.concat(parts.values()).set_index('url_key').sort_index()
@@ -174,23 +199,32 @@ def verify(root):
     assert external.label.eq(1).all() and external.source.eq('phishtank').all()
     assert external.url_key.is_unique
     assert not keys & set(external.url_key) and not hosts & set(external.hostname)
-    return dict(verified_records=len(cleaned), external_records=len(external),
-                cross_split_url_overlap=0, cross_split_hostname_overlap=0,
-                external_url_overlap=0, external_hostname_overlap=0,
-                split_sizes={name: len(frame) for name, frame in parts.items()})
+    return dict(
+        verified_records=len(cleaned),
+        external_records=len(external),
+        cross_split_url_overlap=0,
+        cross_split_hostname_overlap=0,
+        external_url_overlap=0,
+        external_hostname_overlap=0,
+        split_sizes={name: len(frame) for name, frame in parts.items()},
+    )
 
 
+# Verification stage: check whether existing preparation outputs are complete and valid.
 def completed(root):
     report = Path(root) / 'data/processed/urls/cleaning_report.json'
     if not report.exists():
         return False
     try:
         previous = json.loads(report.read_text())
-        return previous.get('pipeline_version') == VERSION and previous.get('validation') == verify(root)
+        return previous.get('pipeline_version') == VERSION and previous.get('validation') == verify(
+            root
+        )
     except (OSError, ValueError, AssertionError, KeyError):
         return False
 
 
+# Preparation stage: clean source data and save leakage-checked dataset splits.
 def run(root, seed=42):
     root = Path(root).resolve()
     if completed(root):
@@ -202,37 +236,53 @@ def run(root, seed=42):
     overlap = external.url_key.isin(primary.url_key)
     host_overlap = external.hostname.isin(primary.hostname)
     external_stats['removed']['overlap_primary_url'] = int(overlap.sum())
-    external_stats['removed']['overlap_primary_hostname_additional'] = int((host_overlap & ~overlap).sum())
+    external_stats['removed']['overlap_primary_hostname_additional'] = int(
+        (host_overlap & ~overlap).sum()
+    )
     external = external.loc[~(overlap | host_overlap)].reset_index(drop=True)
     external_stats['exported_retained'] = len(external)
     parts = split(primary, seed)
     processed = root / 'data/processed/urls'
     split_dir = root / 'data/splits/urls'
-    processed.mkdir(parents=True, exist_ok=True); split_dir.mkdir(parents=True, exist_ok=True)
-    # Only raw URL/label metadata is imported: supplied learned/content features
-    # are deliberately excluded from the future feature-engineering inputs.
+    processed.mkdir(parents=True, exist_ok=True)
+    split_dir.mkdir(parents=True, exist_ok=True)
+
     primary.to_parquet(processed / 'urls_cleaned.parquet', index=False)
     external.to_parquet(processed / 'phishtank_external.parquet', index=False)
     for name, frame in parts.items():
         frame.to_parquet(split_dir / f'{name}.parquet', index=False)
-    report = dict(pipeline_version=VERSION, seed=seed,
-                  sources={'phiusiil':primary_stats, 'phishtank':external_stats},
-                  label_mapping={'phiusiil':'original 1 -> legitimate 0; original 0 -> phishing 1', 'phishtank':'verified phishing -> 1'},
-                  class_distribution={name: frame.label.value_counts().sort_index().to_dict() for name,frame in {'cleaned':primary, **parts}.items()},
-                  split_method='20 stratified hostname-group folds, allocated 14/3/3; ratios approximate',
-                  limitations=['Related subdomains can overlap; no registrable-domain or temporal guarantee.',
-                               'PhishTank is phishing-only: measure phishing recall, not accuracy or false-positive rate.',
-                               'Schemeless/non-HTTP(S) URLs rejected; malformed percent escapes retained as a lexical flag.',
-                               'Original URL strings preserved; identity matching does not exhaust every server-specific URL equivalence.'],
-                  validation=verify(root))
-    report = json.loads(json.dumps(report))  # Stable JSON keys on initial and skipped runs.
-    (processed / 'cleaning_report.json').write_text(json.dumps(report, indent=2)+'\n')
+    report = dict(
+        pipeline_version=VERSION,
+        seed=seed,
+        sources={'phiusiil': primary_stats, 'phishtank': external_stats},
+        label_mapping={
+            'phiusiil': 'original 1 -> legitimate 0; original 0 -> phishing 1',
+            'phishtank': 'verified phishing -> 1',
+        },
+        class_distribution={
+            name: frame.label.value_counts().sort_index().to_dict()
+            for name, frame in {'cleaned': primary, **parts}.items()
+        },
+        split_method='20 stratified hostname-group folds, allocated 14/3/3; ratios approximate',
+        limitations=[
+            'Related subdomains can overlap; no registrable-domain or temporal guarantee.',
+            'PhishTank is phishing-only: measure phishing recall, not accuracy or false-positive rate.',
+            'Schemeless/non-HTTP(S) URLs rejected; malformed percent escapes retained as a lexical flag.',
+            'Original URL strings preserved; identity matching does not exhaust every server-specific URL equivalence.',
+        ],
+        validation=verify(root),
+    )
+    report = json.loads(json.dumps(report))
+    (processed / 'cleaning_report.json').write_text(json.dumps(report, indent=2) + '\n')
     logging.info('Completed successfully: %s', report['validation'])
     return report
 
 
+# Command stage: read options and run this file’s operation.
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description='URL preparation: validate addresses, remove duplicates and save hostname-separated splits.'
+    )
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--verify', action='store_true')
@@ -240,9 +290,17 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     if args.verify:
         assert completed(args.root), 'Outputs incomplete, invalid, or missing completion report'
-        print(json.dumps(json.loads((args.root/'data/processed/urls/cleaning_report.json').read_text())['validation'], indent=2))
+        print(
+            json.dumps(
+                json.loads((args.root / 'data/processed/urls/cleaning_report.json').read_text())[
+                    'validation'
+                ],
+                indent=2,
+            )
+        )
     else:
         run(args.root, args.seed)
+
 
 if __name__ == '__main__':
     main()

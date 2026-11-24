@@ -1,28 +1,17 @@
-# Phishing Detection with Machine Learning
+# Phishing Detection — Email and URL
 
-An academic cybersecurity project with two independent classifiers:
+Two independent offline machine-learning components:
 
-- **Email V1** classifies email content using word TF-IDF, six numerical indicators and a linear Support Vector Machine (SVM).
-- **URL V1** classifies HTTP(S) addresses using 13 lexical features and a Random Forest.
-
-Both use the project labels **0 = legitimate** and **1 = phishing**. The classifiers provide predictions, not guarantees that a message or destination is safe. Email CSV label provenance and URL source-format bias limit real-world generalization.
-
-## 1. What the project does
-
-| Component | Input | Processing | Selected model |
+| Task | Algorithms compared | Current selected model | Features |
 |---|---|---|---|
-| Email | Optional subject and a required decoded plain-text or HTML body | Clean text, count links before HTML cleaning, apply frozen word TF-IDF and six scaled indicators | Unweighted `LinearSVC` |
-| URL | One URL beginning with `http://` or `https://` | Validate syntax and calculate 13 ordered lexical features from the original string | `RandomForestClassifier` |
+| Email | Logistic Regression and Linear SVM, each with original weight variants | Linear SVM | Word TF-IDF + six scaled numerical indicators |
+| URL | Scaled Logistic Regression and Random Forest | Random Forest | 13 lexical URL indicators |
 
-The pipelines share utility code but have separate models, features and thresholds. Email analysis does not automatically run the URL classifier on extracted links. Inference does not train models, read datasets, visit URLs or perform DNS lookups. Attachments, sender authentication and destination webpage content are outside its scope.
+Project labels are **0 legitimate, 1 phishing**. Predictions are research outputs, not safety guarantees. Source/label uncertainty and formatting bias limit generalization.
 
-## 2. Installation
+## Setup
 
-Use **Python 3.11**. Run every command below from the repository root. Linux with Python 3.11.18 was verified; other operating systems have not been verified. No GPU is required.
-
-Choose one environment setup:
-
-**Python virtual environment**
+Use Python **3.11**, from repository root:
 
 ```bash
 python3.11 -m venv .venv
@@ -30,402 +19,150 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-**Conda**
+Alternatively, `conda env create -f environment.yml` then `conda activate phishing-ml`. Install `requirements-dev.txt` for pytest. No GPU, external web server, network lookup or dataset is needed for pretrained prediction. Only load trusted local joblib artifacts.
+
+## Local web interface
+
+After setup, run from the repository root:
 
 ```bash
-conda env create -f environment.yml
-conda activate phishing-ml
+python -m src.web.app
 ```
 
-Check the active environment:
+Open **http://127.0.0.1:8000**. Use the Email form for subject/body or the URL form for an HTTP(S) address. Each form calls its existing inference module and shows the prediction, model score and saved threshold. Models load on the first request and remain cached until restart.
+
+Stop with `Ctrl+C`. If port 8000 is busy, run `python -m src.web.app --port 8001` and open http://127.0.0.1:8001. The server listens only on this computer; it needs no extra dependencies or build step. Inputs are not saved and URLs are not visited.
+
+## Email commands
 
 ```bash
-python --version
-python -m pip check
+python -m src.inference.email --subject 'Meeting' --body 'Project meeting tomorrow at ten.' --json
+python -m src.preprocessing.emails --verify
+python -m src.features.email_pipeline --verify
+python -m src.training.train_email --verify
+python -m src.training.train_email --compare
+python -m src.evaluation.evaluate_email --verify
 ```
 
-Runtime and reproduction dependencies are pinned in `requirements.txt`. To run tests, also install the development requirements:
+Inference accepts an optional subject and required decoded visible body, with a 5,000,000-character combined limit. HTML links are counted before cleaning; unsupplied MIME alternatives/attachments cannot be reconstructed. The example above is predicted legitimate. The SVM margin is not a probability.
+
+## URL commands
 
 ```bash
-python -m pip install -r requirements-dev.txt
+python -m src.inference.url --url 'https://www.example.com' --json
+python -m src.preprocessing.urls --verify
+python -m src.features.url_pipeline --verify
+python -m src.training.train_url --verify
+python -m src.training.train_url --compare
+python -m src.evaluation.evaluate_url --verify
 ```
 
-## 3. Using the interface
+URLs require HTTP(S), a valid dotted host/IP and port, no embedded whitespace, and at most 65,536 characters. Nothing is fetched or resolved. A Random Forest class estimate is not calibrated live risk. The model flags `https://example.com/` while accepting `https://www.example.com`, illustrating source-format sensitivity rather than destination safety.
 
-The current interface is a **terminal application (CLI)**. The previously developed Streamlit interface was removed; this version has no web-server launch command.
+## Interface and outputs
 
-### Interactive menu
+The terminal menu remains available:
 
 ```bash
 python -m src.inference.predict --interactive
 ```
 
-The application prompts for `email`, `url` or `quit`:
+Choose `email`, `url` or `quit`. For email, finish multiline input with a single `.` line. The compatibility commands `python -m src.inference.predict email --body '...'` and `... url --url 'https://www.example.com'` still work. The local browser interface above uses the same saved models and preprocessing.
 
-1. Enter `email` to provide a subject and body. The subject may be blank. Finish a multiline body with a single `.` on its own line.
-2. Enter `url` to provide one complete HTTP(S) address.
-3. Enter `quit` to exit. Short forms `e`, `u` and `q` are also accepted.
+JSON includes `prediction`, `score`, `threshold`, `model`, `score_type`, `risk_level`, `score_note` and `risk_note`. Phishing means score >= the saved threshold: email −0.24541511286701478; URL 0.4754530853344011. Risk bands are provisional distances from the threshold, not calibrated confidence. CLI arguments may appear in shell history/process listings; interactive mode avoids body arguments.
 
-Example email input:
+## Reading the code
 
-```text
-Choose email / url / quit: email
-Subject: Meeting
-Body (finish with a single . on its own line):
-Project meeting tomorrow at ten.
-.
-```
+Each maintained Python file begins with a short explanation. A simple stage comment before every function describes its purpose. Task-specific logic stays in email or URL modules; common.py files contain shared utilities. URL-only external metrics are in `src/evaluation/evaluate_url.py`, and display-band widths are defined in each inference module. Training selection, preprocessing and saved thresholds are unchanged.
 
-This example produces a legitimate prediction with an SVM margin of approximately `-1.194796`. The program prints the model score, decision threshold, heuristic risk band and explanatory notes.
-
-### Analyze an email directly
-
-```bash
-python -m src.inference.predict email \
-  --subject 'Meeting' \
-  --body 'Project meeting tomorrow at ten.'
-```
-
-The body must contain visible text; a subject alone is insufficient. Supply decoded message content, not an entire raw MIME envelope. The CLI cannot reconstruct MIME alternatives, headers or attachments that were not supplied. Combined subject/body input is limited to 5,000,000 characters.
-
-### Analyze a URL directly
-
-```bash
-python -m src.inference.predict url --url 'https://www.example.com'
-```
-
-Supply an HTTP(S) URL with a valid hostname/IP and port, without embedded whitespace. URLs are limited to 65,536 characters. Syntax validation does not establish destination safety.
-
-### JSON output and model location
-
-Add `--json` for machine-readable output:
-
-```bash
-python -m src.inference.predict email --body 'Project meeting tomorrow' --json
-python -m src.inference.predict url --url 'https://www.example.com' --json
-```
-
-To use a separate artifact root, place global `--root` before the subcommand:
-
-```bash
-python -m src.inference.predict --root /absolute/path/to/artifact-root \
-  url --url 'https://www.example.com' --json
-```
-
-For all options:
-
-```bash
-python -m src.inference.predict --help
-python -m src.inference.predict email --help
-python -m src.inference.predict url --help
-```
-
-### Understanding the result
-
-| Field | Meaning |
-|---|---|
-| `prediction` | `PHISHING` or `LEGITIMATE`, using `score >= threshold` |
-| `score` | Native margin for Linear SVM, or class-1 estimate for Logistic Regression/Random Forest |
-| `threshold` | Saved validation-selected decision threshold |
-| `model` | Selected candidate name |
-| `score_type` | `uncalibrated_margin` or `probability` |
-| `risk_level` | Provisional LOW/MEDIUM/HIGH band based on distance from the threshold |
-| `score_note`, `risk_note` | Interpretation limits for the score and band |
-
-Email uses threshold `-0.24541511286701478`; URL uses `0.4754530853344011`. An SVM margin is not a probability. A Random Forest estimate is not calibrated real-world risk. Risk bands use threshold ±0.5 for email and ±0.10 for URLs; they do not change the classification.
-
-**Known limitation:** URL V1 flags `https://example.com/` as phishing while accepting `https://www.example.com`. This illustrates sensitivity to formatting and source bias; it is not evidence that example.com is malicious. Do not change the frozen threshold based on a demonstration input.
-
-Inputs are not persistently logged by application code, but command arguments may be visible in shell history or process listings. Interactive mode avoids placing the body in command arguments. Load only trusted local joblib files.
-
-## 4. Repository structure
+## Project files
 
 ```text
-phishing-detection-ml/
-├── README.md
-├── .gitignore
-├── requirements.txt
-├── requirements-dev.txt
-├── environment.yml
-├── pytest.ini
-├── src/
-│   ├── preprocessing/
-│   │   ├── __init__.py
-│   │   ├── emails.py
-│   │   └── urls.py
-│   ├── features/
-│   │   ├── __init__.py
-│   │   ├── common.py
-│   │   ├── email_features.py
-│   │   ├── url_features.py
-│   │   └── pipeline.py
-│   ├── training/
-│   │   ├── __init__.py
-│   │   ├── train_email.py
-│   │   ├── train_url.py
-│   │   ├── common.py
-│   │   └── pipeline.py          # Backward-compatible two-task command
-│   ├── evaluation/
-│   │   ├── __init__.py
-│   │   └── pipeline.py
-│   └── inference/
-│       ├── __init__.py
-│       └── predict.py
-├── tests/                     # Eight maintained test modules listed below
-├── models/
-│   ├── email/
-│   ├── url/
-│   ├── feature_engineering/
-│   └── url_v2/                # Historical; not used by V1 inference
-├── data/                      # Local, ignored by Git
-│   ├── raw_data/
-│   ├── processed/
-│   ├── splits/
-│   └── features/
-├── reports/
-│   ├── training/              # V1 validation/model selection
-│   ├── evaluation/            # V1 test/external evidence
-│   ├── url_v2/                # Historical experiments
-│   └── url_v3/                # Historical source qualification
-├── docs/                      # Local, ignored by Git
-│   ├── ACADEMIC_REPORT.md
-│   ├── EXECUTION_GUIDE.md
-│   ├── DEFENSE_MASTER_GUIDE.md
-│   └── reference/
-└── archive/                   # Local, ignored by Git
-    ├── research/
-    ├── notebooks/
-    ├── tools/
-    └── audit_history/
+src/
+  preprocessing/ emails.py, urls.py, common.py
+  features/      email_features.py, email_pipeline.py
+                 url_features.py, url_pipeline.py, common.py, pipeline.py
+  training/      train_email.py, train_url.py, common.py, pipeline.py
+  evaluation/    evaluate_email.py, evaluate_url.py, common.py, pipeline.py
+  inference/     email.py, url.py, common.py, predict.py
+  web/           app.py, index.html, __init__.py
+tests/           test_email_*.py, test_url_*.py, shared contract helpers
+models/          email/, url/, feature_engineering/
+data/            raw_data/, processed/, splits/, features/ (local)
+reports/         training/, evaluation/
+docs/            three main guides; reference/email/ and reference/url/ (local)
 ```
 
-### Root files
-
-| File | Purpose |
+| File or group | Responsibility |
 |---|---|
-| `README.md` | Project introduction, setup, usage, file map and reproduction commands |
-| `.gitignore` | Keeps local datasets, documentation, archives, caches and secrets out of new Git additions; allowlists selected models and aggregate reports |
-| `requirements.txt` | Pinned dependencies for V1 inference, preprocessing, training and evaluation |
-| `requirements-dev.txt` | Runtime requirements plus pytest |
-| `environment.yml` | Alternative Conda setup specifying Python 3.11 |
-| `pytest.ini` | Maintained test discovery and repository import-path configuration |
+| `src/preprocessing/emails.py` | MIME/CSV cleaning, duplicate/thread grouping, label checks and email splits |
+| `src/preprocessing/urls.py` | URL syntax/canonical identity, label mapping, hostname splits and external exclusions |
+| `src/preprocessing/common.py` | Shared content hash only |
+| `src/features/email_features.py` | Frozen-compatible EmailFeatures class: TF-IDF/scaler; original serialized import path retained |
+| `src/features/url_features.py` | Stateless 13-column lexical feature class; original definitions/order retained |
+| `src/features/{email,url}_pipeline.py` | Independent feature export, alignment/schema validation and saved-run verification |
+| `src/features/common.py` | Shared keyword counting, manifests and completion utilities |
+| `src/training/train_email.py` | Email constructors, sparse loaders, preflight, verification and comparison |
+| `src/training/train_url.py` | URL constructors, tabular loaders, preflight, verification and comparison |
+| `src/training/common.py` | Generic fitting/scoring/selection utilities with task readers supplied explicitly |
+| `src/evaluation/evaluate_email.py` | Email-only test loading, group overlap checks and selected-model evaluation |
+| `src/evaluation/evaluate_url.py` | URL-only test/external loading, host/key overlap checks and evaluation |
+| `src/evaluation/common.py` | Shared binary metrics, plots, error indices and evidence-preservation guards; URL-only external metrics live in evaluate_url.py |
+| `src/inference/email.py`, `url.py` | Separate validation, retained-model loading, feature preparation and CLI |
+| `src/web/app.py`, `index.html` | Local HTTP server, separate Email/URL forms and JSON endpoints using existing inference |
+| `src/inference/common.py` | Shared artifact checks, scoring and formatting; task-specific display widths live in email.py and url.py |
+| Remaining `pipeline.py`/`predict.py` facades | Backward-compatible dispatch/menu only, not duplicated task implementations |
+| Package `__init__.py` files | Stable import structure |
+| `tests/test_email_*.py`, `test_url_*.py` | Task-specific preprocessing, features, training, evaluation and inference tests |
+| Shared test helpers/common tests | Task-neutral contracts, metric formulas, no-fit boundaries and bundle checks |
+| `requirements.txt`, `requirements-dev.txt` | Pinned project dependencies; pytest separated for development |
+| `environment.yml`, `pytest.ini`, `.gitignore` | Python environment, test discovery, local data/docs and cache exclusions |
 
-### Source files
+Email artifacts include four original LR/SVM configurations, the selected relative alias, threshold and start marker. URL artifacts include LR/RF, selected alias, threshold and marker. `models/feature_engineering/` retains the email transformer and both schemas. Neither prediction requires the other task's model. Do not rename `src.features.email_features.EmailFeatures` or change feature order.
 
-| File | Responsibility |
-|---|---|
-| `src/preprocessing/emails.py` | Discover MIME/CSV sources, decode messages, clean text, extract links, group duplicates, exclude conflicts and export grouped splits |
-| `src/preprocessing/urls.py` | Validate/normalize URLs, create canonical duplicate keys, map labels, split by hostname and exclude internal overlap from external data |
-| `src/features/common.py` | Shared suspicious keyword list and counting function |
-| `src/features/email_features.py` | `EmailFeatures`: train-fitted word TF-IDF plus six MaxAbs-scaled numerical indicators; reused unchanged at inference |
-| `src/features/url_features.py` | `URLFeatures`: stateless extraction of the fixed 13 lexical columns |
-| `src/features/pipeline.py` | Generate and verify saved matrices, row alignment, schemas and feature reports for both tasks |
-| `src/training/train_email.py` | Independently train/compare Logistic Regression and Linear SVM, retaining original unweighted/balanced configurations |
-| `src/training/train_url.py` | Independently train/compare scaled Logistic Regression and Random Forest |
-| `src/training/common.py` | Shared train/validation loading, leakage checks, fitting workflow, metrics, scoring, threshold selection and verification; no algorithm constructors |
-| `src/training/pipeline.py` | Small compatibility wrapper for the original two-task command and historical utility imports |
-| `src/evaluation/pipeline.py` | Evaluate frozen test/external features, calculate metrics and overlaps, and save confusion plots/error indices |
-| `src/inference/predict.py` | CLI/menu, input validation, lazy artifact loading, schema checks, feature transformation and threshold-based prediction |
-| Each package `__init__.py` | Retains the package/import structure |
+`data/processed/` contains cleaned Parquets, cleaning reports and the preserved email SQLite workspace; `data/splits/` contains frozen train/validation/test Parquets; `data/features/` contains email sparse NPZ/aligned row tables and URL lexical Parquets with manifests. Sources are Enron, two local email CSVs, PhiUSIIL and PhishTank. Original ZIP/checkpoint copies remain local and are not extra training data.
 
-Do not casually rename `src.features.email_features.EmailFeatures`: joblib loads the saved transformer through that class path. Inference imports the shared `scores` helper from `src.training.common`; importing it does not start training.
+`reports/training/` preserves comparisons and completion evidence. `reports/evaluation/` preserves test/external metrics, confusion PNGs, error-row Parquets and run summaries. Shared global summaries are original run metadata, not mixed classifier implementations.
 
-### Models and schemas
+## Reproduce one task independently
 
-| Location / files | Role |
-|---|---|
-| `models/email/linear_svm_none.joblib` | Selected email classifier |
-| `models/email/linear_svm_balanced.joblib`, `logistic_regression_none.joblib`, `logistic_regression_balanced.joblib` | Preserved email comparison candidates; also checked by training verification |
-| `models/url/random_forest.joblib` | Selected URL classifier |
-| `models/url/logistic_regression.joblib` | Preserved scaled logistic-regression baseline |
-| `models/email/selected_model.joblib`, `models/url/selected_model.joblib` | Relative symlinks to the selected candidate in the same directory |
-| `models/email/selected_threshold.json`, `models/url/selected_threshold.json` | Selected model reference, threshold, score type, label/rule and validation metrics |
-| `models/email/training_started.json`, `models/url/training_started.json` | Preserved start markers and partial-run evidence |
-| `models/feature_engineering/email_transformer.joblib` | Frozen email vocabulary, IDF weights and numerical scaler |
-| `models/feature_engineering/emails_schema.json`, `urls_schema.json` | Frozen feature layout/type contracts |
-| `models/url_v2/`, `models/feature_engineering/urls_v2/` | Historical candidate models, character vectorizer and configuration; not V1 runtime inputs |
-
-For **Email-only inference**, keep the selected email model/alias/threshold, email transformer and email schema. For **URL-only inference**, keep the selected URL model/alias/threshold and URL schema. Neither requires the other task's artifacts, candidate models, reports or datasets. Keep the source package layout shown above.
-
-### Datasets and generated files
-
-| Location / file family | Role |
-|---|---|
-| `data/raw_data/emails/enron/maildir/` | Original MIME messages, presumed legitimate by source membership |
-| `data/raw_data/emails/nazario/Nazario_5.csv`, `email_text.csv` | Mixed-label email sources; exact lineage and phishing-versus-spam semantics remain uncertain |
-| `data/raw_data/urls/phiusiil/PhiUSIIL_Phishing_URL_Dataset.csv` | Internal URL source; original label 1 is inverted to project 0, and original 0 to project 1 |
-| `data/raw_data/urls/phishtank/online-valid.csv` | Provider-verified online phishing snapshot for positive-only external assessment |
-| `data/processed/emails/emails_cleaned.parquet` | Cleaned/deduplicated messages with labels and provenance |
-| `data/processed/emails/work.sqlite` | Preserved parsing/grouping workspace; contains email content |
-| `data/processed/urls/urls_cleaned.parquet`, `phishtank_external.parquet` | Cleaned internal URLs and overlap-excluded external positives |
-| `data/processed/{emails,urls}/cleaning_report.json` | Source counts, exclusions, label rules, split counts and limitations |
-| `data/splits/{emails,urls}/{train,validation,test}.parquet` | Authoritative frozen partition membership and provenance |
-| `data/features/emails/{train,validation,test}.npz` | Sparse 50,006-column float32 email feature matrices |
-| `data/features/emails/{train,validation,test}_rows.parquet` | Matching row identities and labels |
-| `data/features/urls/{train,validation,test,external}.parquet` | 13 lexical predictors plus identity/target metadata |
-| `data/features/{emails,urls}/feature_report.json` | Input metadata, schemas and alignment/completion checks |
-| Explicit `urls_v2`/`urls_v3` directories, OpenPhish and Tranco sources | Historical external experiments/source qualification, not extra V1 training sources |
-
-Generated datasets and raw originals remain local. ZIP and notebook-checkpoint copies are preserved provenance, not additional training examples. Record-level corpus files share these schemas; they are not separate software modules.
-
-### Evaluation evidence
-
-| Files under `reports/` | Purpose |
-|---|---|
-| `training/{email,url}_model_comparison.json` | Candidate validation metrics, fit times, selected model/threshold and input metadata |
-| `training/training_summary.json` | Completion summary for both tasks |
-| `evaluation/{email,url}_test_metrics.json` | Frozen held-out test results, confusion counts and source/overlap analysis |
-| `evaluation/phishtank_external_metrics.json` | External phishing detections, misses and recall |
-| `evaluation/{email,url}_confusion_matrix.png` | Saved V1 test matrix visualizations |
-| `evaluation/{email,url}_test_errors.parquet` | Error row indices, labels, scores and types; no raw email/URL content |
-| `evaluation/evaluation_started.json`, `evaluation_summary.json` | Preserved evaluation run state and frozen-artifact verification |
-| `url_v2/`, `url_v3/` | Historical training/selection/diagnostic and source-qualification evidence |
-
-### Tests
-
-| File | Checks |
-|---|---|
-| `tests/test_email_preprocessing.py` | MIME/HTML parsing, duplicates/groups, conflicts, large inputs and exports |
-| `tests/test_url_preprocessing.py` | URL normalization, labels, overlap removal and completed runs |
-| `tests/test_features.py` | Training-only fitting, stable feature order, finiteness and row alignment |
-| `tests/test_training.py` | Tiny synthetic fits, train/validation boundaries, selection and serialization |
-| `tests/test_evaluation.py` | Metric formulas, single-class restrictions, error artifacts and model compatibility |
-| `tests/test_inference.py` | Frozen preprocessing/scoring parity, validation, JSON and interactive behavior |
-| `tests/test_training_tasks.py` | Independent task roots/CLI, constructor equivalence, validation/test separation, retained-model inference and refusal to overwrite evidence |
-| `tests/test_packaging.py` | Offline prediction and independent Email-only/URL-only artifact bundles without datasets |
-
-### Local documentation and archive
-
-`docs/` is ignored by Git and is not included in a fresh clone. When available locally, start with:
-
-1. `docs/ACADEMIC_REPORT.md` — academic context, methodology, results and limitations.
-2. `docs/EXECUTION_GUIDE.md` — detailed execution, inputs and troubleshooting.
-3. `docs/DEFENSE_MASTER_GUIDE.md` — study order, technical questions and presentation rehearsal.
-
-`docs/reference/` contains architecture, datasets/source details, both pipelines, algorithms, evaluation, codebase map, the defense question bank, cleanup report and audit evidence.
-
-`archive/research/` holds original V2/V3 source/configuration/tests/environment snapshots; `archive/notebooks/` holds exploratory notebooks; `archive/tools/` holds optional audit utilities; `archive/audit_history/` holds earlier records. These local materials are not prerequisites for V1 inference. Historical artifact/data paths were retained to avoid rewriting evidence or adding compatibility links.
-
-**Version boundary:** V2 completed experiments, including a character TF-IDF SVM, but showed severe failure on Tranco candidate negatives. V3 completed dataset/source qualification only; it has no final trained model. Archived imports require separate historical-layout reconstruction and are not part of maintained test discovery.
-
-## 5. Run checks
-
-With development dependencies installed:
+Put that task's exact raw snapshots under a **fresh** root. Email expects `data/raw_data/emails/enron/maildir/` and `emails/nazario/{Nazario_5.csv,email_text.csv}`; URL expects `data/raw_data/urls/phiusiil/PhiUSIIL_Phishing_URL_Dataset.csv` and `urls/phishtank/online-valid.csv`. Current upstream feeds may differ from the original run, and exact email CSV lineage is unresolved.
 
 ```bash
+REPRO_ROOT=/absolute/path/to/fresh-email-root
+python -m src.preprocessing.emails --root "$REPRO_ROOT" --seed 42 --workers 4
+python -m src.features.email_pipeline --root "$REPRO_ROOT" --seed 42
+python -m src.training.train_email --root "$REPRO_ROOT" --seed 42
+python -m src.evaluation.evaluate_email --root "$REPRO_ROOT"
+```
+
+```bash
+REPRO_ROOT=/absolute/path/to/fresh-url-root
+python -m src.preprocessing.urls --root "$REPRO_ROOT" --seed 42
+python -m src.features.url_pipeline --root "$REPRO_ROOT" --seed 42
+python -m src.training.train_url --root "$REPRO_ROOT" --seed 42
+python -m src.evaluation.evaluate_url --root "$REPRO_ROOT"
+```
+
+Email preprocessing rebuilds outputs: do not run it on preserved evidence. Training fits only training; candidate selection and threshold tuning use validation; final evaluation uses the saved selected model/threshold on held-out data. Completed later stages verify/skip, and orphaned artifacts refuse automatic overwriting. `--compare --output /unused/file.json` creates a fresh validation comparison including accuracy/confusion/timing; it never fits or tunes. Original fit times are explicitly attributed, scoring time is measured anew.
+
+## Preserved results and tests
+
+| Task | Test rows | Accuracy | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|---:|
+| Email | 44,947 | 0.996618 | 0.984090 | 0.983673 | 0.983881 |
+| URL | 35,202 | 0.995995 | 0.999058 | 0.991519 | 0.995274 |
+
+Email FP/FN: 75/77; URL FP/FN: 14/127. External PhishTank recall: 24,440/24,771 = 0.986638, with 331 misses. Positive-only data cannot establish false alerts. Saved original models and results are unchanged.
+
+```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python -m pip check
 ```
 
-The pre-refactor baseline passed 22 tests; the updated suite passed **28 maintained tests**, including independent training roots, evaluation, retained-model loading and both artifact bundles. Tests use tiny temporary training fixtures where needed; they do not retrain the preserved project models.
+Tests use temporary synthetic fits and frozen artifact checks; they do not retrain preserved models. Keep local datasets/candidate artifacts for full saved-run verification. A code-only clone can use selected pretrained artifacts and the maintained tests, but does not include all experimental inputs.
 
-For the complete saved local run:
+## Local documentation
 
-```bash
-python -m src.preprocessing.urls --verify
-python -m src.features.pipeline --verify
-python -m src.training.train_email --verify
-python -m src.training.train_url --verify
-python -m src.evaluation.pipeline --kind email --verify
-python -m src.evaluation.pipeline --kind url --verify
-```
-
-These verifiers require the matching local data, candidate artifacts and reports. A code-only clone can run pretrained inference and maintained tests, but cannot verify or regenerate the original experiment without those additional files.
-
-## 6. Reproduce preprocessing, training and evaluation
-
-Run reproduction in a **fresh output root** to preserve existing evidence. Place the exact original raw snapshots under that root using this layout:
-
-```text
-<reproduction-root>/data/raw_data/
-├── emails/
-│   ├── enron/maildir/<employee>/<folder>/<message>
-│   └── nazario/
-│       ├── Nazario_5.csv
-│       └── email_text.csv
-└── urls/
-    ├── phiusiil/PhiUSIIL_Phishing_URL_Dataset.csv
-    └── phishtank/online-valid.csv
-```
-
-V1 discovers local sources; it does not download them. New provider feeds may differ from the historical snapshots. Exact independent reproduction is also limited by unresolved email CSV provenance and path/mtime-sensitive manifests.
-
-From the code repository root:
-
-```bash
-REPRO_ROOT=/absolute/path/to/fresh-reproduction
-python -m src.preprocessing.emails --root "$REPRO_ROOT" --seed 42 --workers 4
-python -m src.preprocessing.urls --root "$REPRO_ROOT" --seed 42
-python -m src.features.pipeline --root "$REPRO_ROOT" --seed 42
-python -m src.training.train_email --root "$REPRO_ROOT" --seed 42
-python -m src.training.train_url --root "$REPRO_ROOT" --seed 42
-python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind email
-python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind url
-```
-
-Both preprocessing tasks must complete before the shared feature stage. Email preparation groups related messages; URL preparation separates exact hostnames. Both target approximately 70/15/15 train/validation/test partitions. Learned transforms fit training only. Candidates are selected on validation AP, then the selected threshold maximizes validation F1; held-out evaluation follows selection.
-
-Email preprocessing replaces its working tables/exports, so do not rerun it against the preserved run merely to resolve a missing-file error. Completed later stages verify/skip; partial-run markers require inspection. Do not edit manifests or remove markers to force success.
-
-Verify and use the newly generated artifacts:
-
-```bash
-python -m src.features.pipeline --root "$REPRO_ROOT" --verify
-python -m src.training.train_email --root "$REPRO_ROOT" --verify
-python -m src.training.train_url --root "$REPRO_ROOT" --verify
-python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind email --verify
-python -m src.evaluation.pipeline --root "$REPRO_ROOT" --kind url --verify
-python -m src.inference.predict --root "$REPRO_ROOT" url --url 'https://www.example.com' --json
-```
-
-Models and reports stay under the new root. A full original-corpus retraining was not performed merely for cleanup.
-
-### Independent training and comparison
-
-The active algorithm families are exactly **Email: Logistic Regression and Linear SVM; URL: Logistic Regression and Random Forest**. Email's unweighted/balanced settings are four configurations of two families, not four different algorithms. Retaining them preserves the original selection experiment. No other algorithm or dependency was active in V1 to remove; XGBoost/LightGBM remain historical V2 research.
-
-With this task's saved features/splits already available:
-
-```bash
-python -m src.training.train_email
-python -m src.training.train_url
-```
-
-Each command accesses only its own task artifacts/data. Completed runs verify and skip; these commands do not silently refit existing models. Use `--root` with a fresh prepared root for deliberate retraining. Preprocessing/feature module names and serialized transformer paths remain unchanged; no splits or features are regenerated by training.
-
-Compare every saved candidate on its original **validation** partition, without fitting or tuning:
-
-```bash
-python -m src.training.train_email --compare
-python -m src.training.train_url --compare
-```
-
-Output includes accuracy, phishing precision/recall/F1, confusion matrix, AP/ROC-AUC, artifact hash, original reported fit time and newly measured model-scoring time. `--output /path/to/new-comparison.json` saves a new JSON and refuses existing files. Fit time is explicitly sourced from the historical report; it is not remeasured. New training reports also include accuracy. Existing report files are never edited to backfill it.
-
-Held-out test evaluation remains separate and evaluates only the frozen selected model at its saved validation threshold. `--kind email` needs no URL artifacts; `--kind url` needs no email artifacts and retains the original positive-only external PhishTank check. Fresh independent evaluations use task-specific start/summary files. The legacy two-task command remains supported for existing workflows; do not mix modes in a partially completed evaluation root. Partial model/evaluation artifacts cause a refusal instead of an automatic overwrite.
-
-If a future deliberate run selects Logistic Regression, inference now accepts that retained model (including the scaled URL Pipeline) with its native score type. Original Email SVM/URL RF predictions and configuration remain unchanged. Streamlit was already absent before this refactor; no UI was removed or recreated, so its startup cannot be verified here.
-
-## 7. Preserved V1 results and limitations
-
-| Task | Test rows | Accuracy | Phishing precision | Recall | F1 |
-|---|---:|---:|---:|---:|---:|
-| Email / linear SVM | 44,947 | 0.996618 | 0.984090 | 0.983673 | 0.983881 |
-| URL / Random Forest | 35,202 | 0.995995 | 0.999058 | 0.991519 | 0.995274 |
-
-Email test false positives/negatives are **75/77**; URL test false positives/negatives are **14/127**. PhishTank external recall is **0.986638**: 24,440 detections and 331 misses out of 24,771 labeled positives. That positive-only set cannot measure false positives. Original evidence is preserved in [reports/evaluation](reports/evaluation) and [reports/training](reports/training).
-
-These scores were independently recomputed during the audit without changing the models. They describe historical snapshots. Source bias, uncertain email labels, related domain families and absent contemporary representative external negatives prevent claims of production readiness. No probability calibration or saved training-performance study is supplied.
-
-## 8. Troubleshooting
-
-| Problem | Action |
-|---|---|
-| Missing `python` or imports | Activate the Python 3.11 environment and install requirements with that interpreter |
-| Model/config missing | Check the named artifact and selected-model symlink target; restore the matching trusted model, schema and threshold |
-| joblib class/version error | Keep the source module layout and pinned dependency versions |
-| Invalid URL | Include an HTTP(S) scheme and valid hostname/IP/port; remove embedded whitespace |
-| Empty email | Provide visible body text; the subject alone is insufficient |
-| Manifest/frozen-input mismatch | Inspect the original files, root and timestamps; do not bypass checks or regenerate preserved splits automatically |
-| Dataset missing in a clone | Obtain the exact authorized local sources; inference itself does not require them |
-| Unexpected confident prediction | Review source/format limitations; a high score is not proof of maliciousness |
+`docs/` remains ignored by Git. Main guides are `ACADEMIC_REPORT.md`, `EXECUTION_GUIDE.md` and `DEFENSE_MASTER_GUIDE.md`. Task-specific pipelines, datasets, algorithms, evaluation and defense notes are separated under `docs/reference/email/` and `docs/reference/url/`. Generic metric/architecture/codebase references are shared. The current verification record is local under `docs/reference/audit/`.

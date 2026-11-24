@@ -29,9 +29,6 @@
 !/reports/training/email_model_comparison.json
 !/reports/training/url_model_comparison.json
 
-# Historical research and user notebooks preserved locally pending review.
-/archive/
-
 # Python and local tooling.
 __pycache__/
 *.py[cod]
